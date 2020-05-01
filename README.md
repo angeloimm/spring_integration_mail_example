@@ -1,0 +1,1 @@
+# spring_integration_mail_example
