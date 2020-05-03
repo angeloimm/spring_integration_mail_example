@@ -94,6 +94,7 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 		CasellaPostaleDto cpd = ccpd.getCasellaPostale();
 		ConfigMailInDto confMailIn = ccpd.getConfigurazioneMailIngresso();
 		String flowId = MAIL_IN_FLOW_ID_PREFIX+cpd.getIndirizzoMail();
+		String flowIdAutoClose = MAIL_IN_FLOW_ID_PREFIX+cpd.getIndirizzoMail()+"AUTOCLOSE";
 		if( flowContext.getRegistrationById(flowId) != null ) {
 			if( logger.isInfoEnabled() ) {
 				logger.info("Integration flow con id {} già esistente. Lo rimuovo", flowId);
@@ -172,6 +173,7 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 		};
 
 		IntegrationFlow flow = null;
+		IntegrationFlow flowAutoClose = null;
 		if( idleSupport ) {
 			if( logger.isInfoEnabled() ){
 				logger.info("Casella postale {} protocollo IMAP con supporto IDLE", confMailIn.getHost());
@@ -187,9 +189,19 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 					.id(userFlag)
 					//.searchTermStrategy(this::notSeenTerm)
 					.selector(selectFunction);
-
+			ImapIdleChannelAdapterSpec imapIdleChannelAdapterSpecAutoClose = Mail.imapIdleAdapter(connectionUrl.toString())
+					.javaMailProperties(javaMailProperties)
+					.shouldDeleteMessages(deleteMessages)
+					.shouldMarkMessagesAsRead(markMessagesRead) 
+					.autoStartup(true)
+					.autoCloseFolder(true)
+					.userFlag(userFlag)
+					.id(userFlag+"AUTOCLOSE")
+					//.searchTermStrategy(this::notSeenTerm)
+					.selector(selectFunction);
 			if (confMailIn.isRichiedeAutenticazione()) {
 				imapIdleChannelAdapterSpec = imapIdleChannelAdapterSpec.javaMailAuthenticator(new CasellaPostaleAuthenticator(cpd.getIndirizzoMail(), cpd.getUsername(), cpd.getPassword()));
+				imapIdleChannelAdapterSpecAutoClose = imapIdleChannelAdapterSpecAutoClose.javaMailAuthenticator(new CasellaPostaleAuthenticator(cpd.getIndirizzoMail(), cpd.getUsername(), cpd.getPassword()));
 			}
 			flow = IntegrationFlows
 					.from(imapIdleChannelAdapterSpec)
@@ -199,9 +211,17 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 						if( !closeables.containsKey(cpd.getIndirizzoMail()) ) {
 							closeables.put(cpd.getIndirizzoMail(), closeable);
 						}
+						logger.info("Publishing event");
 						publishMailEvent(message);
 					})
 					.get();
+			flowAutoClose = IntegrationFlows
+					.from(imapIdleChannelAdapterSpecAutoClose)
+					.handle(message ->{
+						//Just print i received the messa
+						logger.info("Message received");
+					})
+					.get();			
 		}else {
 			if( logger.isInfoEnabled() ){
 				logger.info("Casella postale {} protocollo IMAP senza supporto IDLE", confMailIn.getHost());
@@ -233,6 +253,8 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 					.get();
 		}
 		flowContext.registration(flow).id(flowId).register();
+		if( flowAutoClose != null )
+			flowContext.registration(flowAutoClose).id(flowIdAutoClose).register();
 	}
 	
 	private void publishMailEvent( Message<?> message ) {
@@ -257,7 +279,6 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 			mmih.setBccs(toStringAddress(parser.getBcc()));
 			mmih.setCcs(toStringAddress(parser.getCc()));
 			mmih.setTos(toStringAddress(parser.getTo()));
-			//			MimeMessageBeanUtil mimeInfo = exctractInfo(mimeMessage);
 			List<DataSource> allegati = parser.getAttachmentList();
 			if( allegati != null && !allegati.isEmpty() ) {
 				mmih.setAllegatiMail(allegati);

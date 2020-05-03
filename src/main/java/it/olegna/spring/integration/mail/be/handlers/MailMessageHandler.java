@@ -12,13 +12,6 @@ public class MailMessageHandler {
 
 
 	public void handleMessage(MimeMessageInfoHolder mimeMessage) throws Exception {
-
-
-		//		//Recupero i dati del messaggio
-		//		MimeMessageParser parser = new MimeMessageParser(mimeMessage);
-		//		parser = parser.parse();
-		
-
+		logger.info("Got this message {}", mimeMessage.getOggettoMail());
 	}
-
 }
