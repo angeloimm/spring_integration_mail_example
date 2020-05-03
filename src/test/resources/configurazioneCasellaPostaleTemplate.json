@@ -1,0 +1,28 @@
+{
+  "casellaPostale": {
+    "indirizzoMail": "",
+    "nomeVisualizzato": "",
+    "password": "",
+    "pec": false,
+    "username": ""
+  },
+  "configurazioneMailIngresso": {
+    "host": "",
+    "imap": true,
+    "porta": 993,
+    "protocollo": "IMAP_IDLE",
+    "richiedeSsl": true,
+    "richiedeStarttsl": false,
+    "richiedeAutenticazione" : true
+  },
+  "configurazioneMailUscita": {
+    "host": "",
+    "portaSsl": 465,
+    "portaTls": 587,
+    "protocollo": "SMTP",
+    "richiedeSsl": true,
+    "richiedeTls": false,
+    "richiedeStarttsl": true,
+    "richiedeAutenticazione" : true
+  }
+}

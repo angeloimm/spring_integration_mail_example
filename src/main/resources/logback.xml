@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<configuration debug="false">
+	<shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook" />
+	<appender name="consoleAppender" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder>
+			<charset>UTF-8</charset>
+			<Pattern>%d %-4relative [%thread] %-5level %logger{35} - %msg %mdc%n
+			</Pattern>
+		</encoder>
+	</appender>
+	<appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>logs/webmail_be.log</file>
+		<rollingPolicy	class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+			<fileNamePattern>logs/webmail_be_%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+			<maxFileSize>5MB</maxFileSize>
+			<maxHistory>1</maxHistory>
+			<totalSizeCap>30GB</totalSizeCap>
+		</rollingPolicy>
+		<encoder>
+			<charset>UTF-8</charset>
+			<pattern>%d %-4relative [%thread] %-5level %logger{35} - %msg %mdc%n 
+			</pattern>
+		</encoder>
+	</appender>
+	<appender name="ASYNC_consoleAppender"	class="ch.qos.logback.classic.AsyncAppender">
+		<queueSize>262144</queueSize>
+		<appender-ref ref="consoleAppender" />
+	</appender>
+	<appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+		<queueSize>262144</queueSize>
+		<appender-ref ref="FILE" />
+	</appender>
+	<root level="INFO">
+		<appender-ref ref="ASYNC_consoleAppender" />
+		<appender-ref ref="ASYNC_FILE" />
+	</root>
+</configuration>
