@@ -5,10 +5,8 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +25,6 @@ import javax.mail.search.SearchTerm;
 
 import org.apache.commons.mail.util.MimeMessageParser;
 import org.apache.commons.mail.util.MimeMessageUtils;
-import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,19 +33,13 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.integration.StaticMessageHeaderAccessor;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.IntegrationFlows;
-import org.springframework.integration.dsl.Pollers;
 import org.springframework.integration.dsl.context.IntegrationFlowContext;
 import org.springframework.integration.mail.dsl.ImapIdleChannelAdapterSpec;
-import org.springframework.integration.mail.dsl.ImapMailInboundChannelAdapterSpec;
 import org.springframework.integration.mail.dsl.Mail;
-import org.springframework.integration.mail.dsl.Pop3MailInboundChannelAdapterSpec;
 import org.springframework.messaging.Message;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import it.olegna.spring.integration.mail.be.dto.CasellaPostaleDto;
-import it.olegna.spring.integration.mail.be.dto.ConfigMailInDto;
-import it.olegna.spring.integration.mail.be.dto.ConfigurazioneCasellaPostaleDto;
 import it.olegna.spring.integration.mail.be.events.MailInEvent;
 import it.olegna.spring.integration.mail.be.mail.CasellaPostaleAuthenticator;
 import it.olegna.spring.integration.mail.be.service.IIntegrationFlowManager;
@@ -74,85 +65,42 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 	private ApplicationEventPublisher applicationEventPublisher;
 	private Map<String, Closeable> closeables = new HashMap<String, Closeable>();
 	@Override
-	public void startMailReceiver(ConfigurazioneCasellaPostaleDto ccpd) throws Exception {
-		avviaMailReceiver(ccpd);
+	public void startMailReceiver() throws Exception {
+		avviaImapMailReceiver();
 	}
 
-	private void avviaMailReceiver(ConfigurazioneCasellaPostaleDto ccpd ) {
-		ConfigMailInDto confMailIn = ccpd.getConfigurazioneMailIngresso();
-		if( logger.isInfoEnabled() ) {
-			logger.info("Avvio mail receiver per la casella di posta {}", ccpd.getCasellaPostale().getIndirizzoMail());
-		}
-		if( confMailIn.isImap() ) {
-			avviaImapMailReceiver(ccpd);
-		}else {
-			avviaPop3MailReceiver(ccpd);
-		}
-	}
-	private void avviaImapMailReceiver(ConfigurazioneCasellaPostaleDto ccpd ) {
-	logger.info("Avvio ImapMailReceiver");
-		CasellaPostaleDto cpd = ccpd.getCasellaPostale();
-		ConfigMailInDto confMailIn = ccpd.getConfigurazioneMailIngresso();
-		String flowId = MAIL_IN_FLOW_ID_PREFIX+cpd.getIndirizzoMail();
-		String flowIdAutoClose = MAIL_IN_FLOW_ID_PREFIX+cpd.getIndirizzoMail()+"AUTOCLOSE";
+
+	private void avviaImapMailReceiver() {
+		logger.info("Avvio ImapMailReceiver");
+		String indirizzoMail = "angelo.immediata@ordingsa.it";
+		String username = "angelo.immediata@ordingsa.it";
+		String password = "janinE1974$!";
+		String host = "imaps.pec.aruba.it";
+		String porta = "993";
+		String flowId = MAIL_IN_FLOW_ID_PREFIX+indirizzoMail;
+		String flowIdAutoClose = MAIL_IN_FLOW_ID_PREFIX+indirizzoMail+"AUTOCLOSE";
 		if( flowContext.getRegistrationById(flowId) != null ) {
 			if( logger.isInfoEnabled() ) {
 				logger.info("Integration flow con id {} già esistente. Lo rimuovo", flowId);
 			}
-			closeFolder(cpd);
+			closeFolder(indirizzoMail);
 			flowContext.remove(flowId);
 		}
 		Properties javaMailProperties = new Properties();
-		javaMailProperties.setProperty("mail.debug", String.valueOf(mailDebug));
-		if( confMailIn.isRichiedeStarttsl() ) {
-			javaMailProperties.setProperty("mail.imap.starttls.enable", "true");
-		}
-		if( confMailIn.isRichiedeSsl() ) {
-			javaMailProperties.setProperty("mail.imap.ssl.enable", "true");
-
-		}
-		if( confMailIn.isRichiedeAutenticazione() ) {
-
-			javaMailProperties.setProperty("mail.imap.auth", "true");
-		}
-		boolean idleSupport = true;
+		javaMailProperties.setProperty("mail.debug", "false");
+		javaMailProperties.setProperty("mail.imap.starttls.enable", "true");
+		javaMailProperties.setProperty("mail.imap.ssl.enable", "true");
+		javaMailProperties.setProperty("mail.imap.auth", "true");
+		javaMailProperties.setProperty("mail.store.protocol","imap");
 		StringBuilder connectionUrl = new StringBuilder();
-		switch (confMailIn.getProtocollo()) {
-		case IMAP:
-			connectionUrl.append("imap://");
-			javaMailProperties.setProperty("mail.store.protocol","imap");
-			idleSupport = false;
-			break;
-		case IMAPS:
-			connectionUrl.append("imaps://");
-			javaMailProperties.setProperty("mail.store.protocol","imaps");
-			idleSupport = false;
-			break;
-		case IMAP_IDLE:
-			connectionUrl.append("imap://");
-			javaMailProperties.setProperty("mail.store.protocol","imap");
-			idleSupport = true;
-			break;
-		case IMAPS_IDLE:
-			connectionUrl.append("imaps://");
-			javaMailProperties.setProperty("mail.store.protocol","imaps");
-			idleSupport = true;
-			break;
-		case POP3:
-			if( logger.isWarnEnabled() ){
-				logger.warn("Ricevuto POP3 nella configurazione IMAP. Qualcosa di sbagliato");
-			}
-			break;
-		default:
-			throw new IllegalArgumentException("Passato un protocollo non valido "+confMailIn.getProtocollo());
-		}
-		connectionUrl.append(URLEncoder.encode(cpd.getUsername(), Charset.forName("UTF-8")));
+		connectionUrl.append("imap://");
+		connectionUrl.append(URLEncoder.encode(username, Charset.forName("UTF-8")));
 		connectionUrl.append(":");
-		connectionUrl.append(URLEncoder.encode(cpd.getPassword(), Charset.forName("UTF-8")));
+		connectionUrl.append(URLEncoder.encode(password, Charset.forName("UTF-8")));
 		connectionUrl.append("@");
-		connectionUrl.append(confMailIn.getHost());
+		connectionUrl.append(host);
 		connectionUrl.append(":");
-		connectionUrl.append(confMailIn.getPorta());
+		connectionUrl.append(porta);
 		connectionUrl.append("/INBOX");
 		Function<MimeMessage, Boolean> selectFunction = (MimeMessage message) -> {
 			try {
@@ -174,89 +122,55 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 
 		IntegrationFlow flow = null;
 		IntegrationFlow flowAutoClose = null;
-		if( idleSupport ) {
-			if( logger.isInfoEnabled() ){
-				logger.info("Casella postale {} protocollo IMAP con supporto IDLE", confMailIn.getHost());
-			}
-			String userFlag = confMailIn.getHost() + "_idle_adapter";
-			ImapIdleChannelAdapterSpec imapIdleChannelAdapterSpec = Mail.imapIdleAdapter(connectionUrl.toString())
-					.javaMailProperties(javaMailProperties)
-					.shouldDeleteMessages(deleteMessages)
-					.shouldMarkMessagesAsRead(markMessagesRead) 
-					.autoStartup(true)
-					.autoCloseFolder(false)
-					.userFlag(userFlag)
-					.id(userFlag)
-					//.searchTermStrategy(this::notSeenTerm)
-					.selector(selectFunction);
-			ImapIdleChannelAdapterSpec imapIdleChannelAdapterSpecAutoClose = Mail.imapIdleAdapter(connectionUrl.toString())
-					.javaMailProperties(javaMailProperties)
-					.shouldDeleteMessages(deleteMessages)
-					.shouldMarkMessagesAsRead(markMessagesRead) 
-					.autoStartup(true)
-					.autoCloseFolder(true)
-					.userFlag(userFlag)
-					.id(userFlag+"AUTOCLOSE")
-					//.searchTermStrategy(this::notSeenTerm)
-					.selector(selectFunction);
-			if (confMailIn.isRichiedeAutenticazione()) {
-				imapIdleChannelAdapterSpec = imapIdleChannelAdapterSpec.javaMailAuthenticator(new CasellaPostaleAuthenticator(cpd.getIndirizzoMail(), cpd.getUsername(), cpd.getPassword()));
-				imapIdleChannelAdapterSpecAutoClose = imapIdleChannelAdapterSpecAutoClose.javaMailAuthenticator(new CasellaPostaleAuthenticator(cpd.getIndirizzoMail(), cpd.getUsername(), cpd.getPassword()));
-			}
-			flow = IntegrationFlows
-					.from(imapIdleChannelAdapterSpec)
-					.handle(message ->{
-						//Prendo il closable del messaggio e valorizzo i l'elenco di closeale da chiudere
-						Closeable closeable = StaticMessageHeaderAccessor.getCloseableResource(message);
-						if( !closeables.containsKey(cpd.getIndirizzoMail()) ) {
-							closeables.put(cpd.getIndirizzoMail(), closeable);
-						}
-						logger.info("Publishing event");
-						publishMailEvent(message);
-					})
-					.get();
-			flowAutoClose = IntegrationFlows
-					.from(imapIdleChannelAdapterSpecAutoClose)
-					.handle(message ->{
-						//Just print i received the messa
-						logger.info("Message received");
-					})
-					.get();			
-		}else {
-			if( logger.isInfoEnabled() ){
-				logger.info("Casella postale {} protocollo IMAP senza supporto IDLE", confMailIn.getHost());
-			}
-			String userFlag = confMailIn.getHost() + "_polling_adapter";
-			ImapMailInboundChannelAdapterSpec adapterSpec = Mail.imapInboundAdapter(connectionUrl.toString())
-					.javaMailProperties(javaMailProperties)
-					.shouldDeleteMessages(deleteMessages)
-					.shouldMarkMessagesAsRead(markMessagesRead)
-					.autoCloseFolder(true)
-					.userFlag(userFlag)
-					.simpleContent(true)
-					//.searchTermStrategy(this::notSeenTerm)
-					.selector(selectFunction);
-			if (confMailIn.isRichiedeAutenticazione()) {
-				adapterSpec = adapterSpec.javaMailAuthenticator(new CasellaPostaleAuthenticator(cpd.getIndirizzoMail(), cpd.getUsername(), cpd.getPassword()));
-			}
 
-			flow = IntegrationFlows
-					.from(adapterSpec, e -> e.poller(Pollers.fixedDelay(Duration.ofSeconds(pollingSeconds)).maxMessagesPerPoll(maxMailMessagePerPoll)))
-					.handle(message ->{
-						//Prendo il closable del messaggio e valorizzo i l'elenco di closeale da chiudere
-						Closeable closeable = StaticMessageHeaderAccessor.getCloseableResource(message);
-						if( !closeables.containsKey(cpd.getIndirizzoMail()) ) {
-							closeables.put(cpd.getIndirizzoMail(), closeable);
-						}
-						publishMailEvent(message);
-					})
-					.get();
-		}
+		String userFlag = host + "_idle_adapter";
+		ImapIdleChannelAdapterSpec imapIdleChannelAdapterSpec = Mail.imapIdleAdapter(connectionUrl.toString())
+				.javaMailProperties(javaMailProperties)
+				.shouldDeleteMessages(deleteMessages)
+				.shouldMarkMessagesAsRead(markMessagesRead) 
+				.autoStartup(true)
+				.autoCloseFolder(false)
+				.userFlag(userFlag)
+				.id(userFlag)
+				//.searchTermStrategy(this::notSeenTerm)
+				.selector(selectFunction);
+		ImapIdleChannelAdapterSpec imapIdleChannelAdapterSpecAutoClose = Mail.imapIdleAdapter(connectionUrl.toString())
+				.javaMailProperties(javaMailProperties)
+				.shouldDeleteMessages(deleteMessages)
+				.shouldMarkMessagesAsRead(markMessagesRead) 
+				.autoStartup(true)
+				.autoCloseFolder(true)
+				.userFlag(userFlag)
+				.id(userFlag+"AUTOCLOSE")
+				//.searchTermStrategy(this::notSeenTerm)
+				.selector(selectFunction);
+
+		imapIdleChannelAdapterSpec = imapIdleChannelAdapterSpec.javaMailAuthenticator(new CasellaPostaleAuthenticator(indirizzoMail, username, password));
+		imapIdleChannelAdapterSpecAutoClose = imapIdleChannelAdapterSpecAutoClose.javaMailAuthenticator(new CasellaPostaleAuthenticator(indirizzoMail, username, password));
+		flow = IntegrationFlows
+				.from(imapIdleChannelAdapterSpec)
+				.handle(message ->{
+					//Prendo il closable del messaggio e valorizzo i l'elenco di closeale da chiudere
+					Closeable closeable = StaticMessageHeaderAccessor.getCloseableResource(message);
+					if( !closeables.containsKey(indirizzoMail) ) {
+						closeables.put(indirizzoMail, closeable);
+					}
+					logger.info("Publishing event");
+					publishMailEvent(message);
+				})
+				.get();
+		flowAutoClose = IntegrationFlows
+				.from(imapIdleChannelAdapterSpecAutoClose)
+				.handle(message ->{
+					//Just print i received the messa
+					logger.info("Message received");
+				})
+				.get();			
+
 		flowContext.registration(flow).id(flowId).register();
-		if( flowAutoClose != null )
-			flowContext.registration(flowAutoClose).id(flowIdAutoClose).register();
+		flowContext.registration(flowAutoClose).id(flowIdAutoClose).register();
 	}
-	
+
 	private void publishMailEvent( Message<?> message ) {
 		try {
 			//recupero il mime message e propago l'evento
@@ -273,7 +187,7 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 			}
 			MimeMessageParser parser = new MimeMessageParser(mimeMessage);
 			parser = parser.parse();
-	        String msgId = mimeMessage.getMessageID();
+			String msgId = mimeMessage.getMessageID();
 			MimeMessageInfoHolder mmih = new MimeMessageInfoHolder();
 			mmih.setFrom(parser.getFrom());
 			mmih.setBccs(toStringAddress(parser.getBcc()));
@@ -320,8 +234,7 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 		});
 		return result;
 	}
-	private void closeFolder(CasellaPostaleDto cpd) {
-		String indirizzoMail = cpd.getIndirizzoMail();
+	private void closeFolder(String indirizzoMail) {
 		if( closeables.containsKey(indirizzoMail) ) {
 			Closeable closeable = closeables.get(indirizzoMail);
 			try {
@@ -331,67 +244,7 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 			}
 		}
 	}
-	private void avviaPop3MailReceiver(ConfigurazioneCasellaPostaleDto ccpd ) {
-		CasellaPostaleDto cpd = ccpd.getCasellaPostale();
-		ConfigMailInDto confMailIn = ccpd.getConfigurazioneMailIngresso();
-		String flowId = MAIL_IN_FLOW_ID_PREFIX+cpd.getIndirizzoMail();
-		if( flowContext.getRegistrationById(flowId) != null ) {
-			if( logger.isInfoEnabled() ) {
-				logger.info("Integration flow con id {} già esistente. Lo rimuovo", flowId);
-			}
-			closeFolder(cpd);
-			flowContext.remove(flowId);
-		}
-		Properties javaMailProperties = new Properties();
-		javaMailProperties.setProperty("mail.debug", String.valueOf(mailDebug));
-		if( confMailIn.isRichiedeStarttsl() ) {
-			javaMailProperties.setProperty("mail.pop3.starttls.enable", "true");
-		}
-		if( confMailIn.isRichiedeSsl() ) {
-			javaMailProperties.setProperty("mail.pop3.ssl.enable", "true");
 
-		}
-
-		Function<MimeMessage, Boolean> selectFunction = (MimeMessage message) -> {
-			try {
-				Date dataRicezione = null;
-				long timestamp = message.getHeader("timestamp") != null ? Long.parseLong(message.getHeader("timestamp")[0]) : 0;
-				if( timestamp <= 0 ) {
-
-					return true;
-				}
-				dataRicezione = new Date(timestamp);
-				DateTime today = new DateTime().withTimeAtStartOfDay();
-				DateTime tomorrow = today.plusDays(1).withTimeAtStartOfDay();
-				if( logger.isInfoEnabled() ) {
-					logger.info("Data ricezione {} today {} tomorrow {}", dataRicezione, today, tomorrow);
-				}
-				return dataRicezione.after(today.toDate()) && dataRicezione.before(tomorrow.toDate());
-				//				return true;
-			}catch (Exception e) {
-				logger.error("Errore nel recupero del messaggio in selectFunction", e);
-				return false;
-			}
-		};
-
-
-		Pop3MailInboundChannelAdapterSpec pop3Spec = Mail.pop3InboundAdapter(confMailIn.getHost(), confMailIn.getPorta(), cpd.getUsername(), cpd.getPassword())
-				.javaMailProperties(javaMailProperties)
-				.shouldDeleteMessages(deleteMessages)
-				.selector(selectFunction)
-				.maxFetchSize(2);
-		if( confMailIn.isRichiedeAutenticazione() ) {
-			pop3Spec = pop3Spec.javaMailAuthenticator(new CasellaPostaleAuthenticator(cpd.getIndirizzoMail(), cpd.getUsername(), cpd.getPassword()));
-		}
-		IntegrationFlow flow = IntegrationFlows
-				.from(pop3Spec, e -> e.poller(Pollers.fixedDelay(Duration.ofSeconds(pollingSeconds)).maxMessagesPerPoll(maxMailMessagePerPoll)))
-				.handle(message -> {
-					publishMailEvent(message);
-				})
-
-				.get();
-		flowContext.registration(flow).id(flowId).register();
-	}	
 	private SearchTerm notSeenTerm(Flags supportedFlags, Folder folder) {
 
 		return new FlagTerm(new Flags(Flags.Flag.SEEN), false);
