@@ -72,18 +72,18 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 
 	private void avviaImapMailReceiver() {
 		logger.info("Avvio ImapMailReceiver");
-		String indirizzoMail = "angelo.immediata@ordingsa.it";
-		String username = "angelo.immediata@ordingsa.it";
-		String password = "janinE1974$!";
-		String host = "imaps.pec.aruba.it";
-		String porta = "993";
-		String flowId = MAIL_IN_FLOW_ID_PREFIX+indirizzoMail;
-		String flowIdAutoClose = MAIL_IN_FLOW_ID_PREFIX+indirizzoMail+"AUTOCLOSE";
+		String mailAddress = ""; //Insert here you mail address (e.g. test@gmail.com)
+		String username = ""; //Insert here username
+		String password = ""; //Insert here password
+		String mailServerHost = ""; //Insert here you mail server hosts (e.g. imap.gmail.com)
+		String mailServerPort = "993"; //insert here mail server post (e.g. 993) 
+		String flowId = MAIL_IN_FLOW_ID_PREFIX+mailAddress;
+		String flowIdAutoClose = MAIL_IN_FLOW_ID_PREFIX+mailAddress+"AUTOCLOSE";
 		if( flowContext.getRegistrationById(flowId) != null ) {
 			if( logger.isInfoEnabled() ) {
 				logger.info("Integration flow con id {} già esistente. Lo rimuovo", flowId);
 			}
-			closeFolder(indirizzoMail);
+			closeFolder(mailAddress);
 			flowContext.remove(flowId);
 		}
 		Properties javaMailProperties = new Properties();
@@ -98,9 +98,9 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 		connectionUrl.append(":");
 		connectionUrl.append(URLEncoder.encode(password, Charset.forName("UTF-8")));
 		connectionUrl.append("@");
-		connectionUrl.append(host);
+		connectionUrl.append(mailServerHost);
 		connectionUrl.append(":");
-		connectionUrl.append(porta);
+		connectionUrl.append(mailServerPort);
 		connectionUrl.append("/INBOX");
 		Function<MimeMessage, Boolean> selectFunction = (MimeMessage message) -> {
 			try {
@@ -123,7 +123,7 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 		IntegrationFlow flow = null;
 		IntegrationFlow flowAutoClose = null;
 
-		String userFlag = host + "_idle_adapter";
+		String userFlag = mailServerHost + "_idle_adapter";
 		ImapIdleChannelAdapterSpec imapIdleChannelAdapterSpec = Mail.imapIdleAdapter(connectionUrl.toString())
 				.javaMailProperties(javaMailProperties)
 				.shouldDeleteMessages(deleteMessages)
@@ -145,15 +145,15 @@ public class IntegrationFlowManagerSvcImpl implements IIntegrationFlowManager {
 				//.searchTermStrategy(this::notSeenTerm)
 				.selector(selectFunction);
 
-		imapIdleChannelAdapterSpec = imapIdleChannelAdapterSpec.javaMailAuthenticator(new CasellaPostaleAuthenticator(indirizzoMail, username, password));
-		imapIdleChannelAdapterSpecAutoClose = imapIdleChannelAdapterSpecAutoClose.javaMailAuthenticator(new CasellaPostaleAuthenticator(indirizzoMail, username, password));
+		imapIdleChannelAdapterSpec = imapIdleChannelAdapterSpec.javaMailAuthenticator(new CasellaPostaleAuthenticator(mailAddress, username, password));
+		imapIdleChannelAdapterSpecAutoClose = imapIdleChannelAdapterSpecAutoClose.javaMailAuthenticator(new CasellaPostaleAuthenticator(mailAddress, username, password));
 		flow = IntegrationFlows
 				.from(imapIdleChannelAdapterSpec)
 				.handle(message ->{
 					//Prendo il closable del messaggio e valorizzo i l'elenco di closeale da chiudere
 					Closeable closeable = StaticMessageHeaderAccessor.getCloseableResource(message);
-					if( !closeables.containsKey(indirizzoMail) ) {
-						closeables.put(indirizzoMail, closeable);
+					if( !closeables.containsKey(mailAddress) ) {
+						closeables.put(mailAddress, closeable);
 					}
 					logger.info("Publishing event");
 					publishMailEvent(message);
